@@ -38,17 +38,26 @@
       margin: 0;
     }
 
+    html {
+      /* Edge 窗口本身无法用 CSS 限制最小尺寸；内容层锁死最小宽高，避免过窄挤扁 */
+      min-width: 440px;
+      min-height: 640px;
+      overflow: auto;
+      background: #121319;
+    }
+
     body {
       background: radial-gradient(circle at 10% 0%, #1e1b4b 0%, #121319 45%, #0d0e12 100%);
       color: var(--text-main);
       width: 100%;
+      max-width: 100%;
+      min-width: 440px;
       height: 100%;
-      min-width: 400px;
-      min-height: 560px;
-      padding: clamp(12px, 2.5vw, 22px) clamp(14px, 3vw, 24px);
+      min-height: 640px;
+      padding: 16px 18px;
       display: flex;
       flex-direction: column;
-      gap: clamp(8px, 1.5vh, 14px);
+      gap: 12px;
       overflow: hidden;
       backdrop-filter: blur(20px);
       box-sizing: border-box;
@@ -611,18 +620,15 @@
     init();
 
     (function enforceMinSize() {
-      const MIN_W = 400, MIN_H = 560;
+      const MIN_W = 440, MIN_H = 640;
       function fit() {
         const w = document.documentElement.clientWidth;
         const h = document.documentElement.clientHeight;
-        if (w > 0 && w < MIN_W) {
-          document.body.style.minWidth = MIN_W + 'px';
-          document.documentElement.style.minWidth = MIN_W + 'px';
-        }
-        if (h > 0 && h < MIN_H) {
-          document.body.style.minHeight = MIN_H + 'px';
-          document.documentElement.style.minHeight = MIN_H + 'px';
-        }
+        // 窗口比最小尺寸还窄/矮时，锁住内容宽高，出现滚动而不是压扁布局
+        document.documentElement.style.minWidth = MIN_W + 'px';
+        document.documentElement.style.minHeight = MIN_H + 'px';
+        if (w > 0 && w < MIN_W) document.documentElement.style.overflowX = 'auto';
+        if (h > 0 && h < MIN_H) document.documentElement.style.overflowY = 'auto';
       }
       window.addEventListener('resize', fit);
       fit();
