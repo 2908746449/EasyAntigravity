@@ -597,7 +597,5 @@ server.listen(GUI_PORT, '127.0.0.1', () => {
   ensureProxyWatchdog();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   // 使用 Edge 应用模式；favicon 为 data-URI，任务栏/标题栏图标跟随页面
-  // 默认打开尺寸；页面 CSS 另有 min-width，过窄时内容不塌缩
-  exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --window-size=520,820 --window-position=center --force-dark-mode`);
-
+  exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --force-dark-mode`);
 });
