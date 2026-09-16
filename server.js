@@ -120,6 +120,31 @@ let state = {
   cdpLoopRunning: false
 };
 
+// GUI 存活：关窗后应真正退出后台
+let guiSeen = false;
+let lastGuiAt = 0;
+let quitting = false;
+
+function touchGui() {
+  guiSeen = true;
+  lastGuiAt = Date.now();
+}
+
+function quitApp(reason) {
+  if (quitting) return;
+  quitting = true;
+  state.clientRunning = false;
+  for (const [, entry] of cdpSockets) {
+    try { entry.ws.close(); } catch (e) {}
+  }
+  cdpSockets.clear();
+  releaseLock();
+  // 稍等 SSE 断开，避免日志写到已销毁的响应
+  setTimeout(() => {
+    process.exit(0);
+  }, 80);
+}
+
 const DEFAULT_DANGER_RULES = [
   { id: 'rm-rf', name: '递归强制删除', pattern: '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|--force)', flags: 'i', enabled: true },
   { id: 'windows-del', name: 'Windows 强制删除', pattern: '\\b(del|rd|rmdir)\\s+.*\\/[sqf]', flags: 'i', enabled: true },
@@ -187,7 +212,15 @@ let sseClients = [];
 
 function logToGUI(category, message, cls = '') {
   const payload = JSON.stringify({ category, message, cls });
-  sseClients.forEach(res => res.write(`data: ${payload}\n\n`));
+  const dead = [];
+  sseClients.forEach(res => {
+    try {
+      res.write(`data: ${payload}\n\n`);
+    } catch (e) {
+      dead.push(res);
+    }
+  });
+  if (dead.length) sseClients = sseClients.filter(c => dead.indexOf(c) < 0);
 }
 
 function pushCounters() {
@@ -792,6 +825,7 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   if (req.url === '/' || (req.url && req.url.startsWith('/?'))) {
+    touchGui();
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -844,10 +878,18 @@ const server = http.createServer((req, res) => {
     }
   }
   if (req.url === '/api/status') {
+    touchGui();
     ensureProxyWatchdog();
     return res.end(JSON.stringify(state));
   }
+  if (req.url === '/api/quit' && req.method === 'POST') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true }));
+    quitApp('收到退出请求');
+    return;
+  }
   if (req.url === '/api/events') {
+    touchGui();
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     sseClients.push(res);
     req.on('close', () => { sseClients = sseClients.filter(c => c !== res); });
@@ -960,6 +1002,15 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('exit', releaseLock);
+
+// 打开过 GUI 后：超过 8s 无任何 HTTP 活动（status/页面/SSE 真实流量）→ 关窗退出
+// 不用 sseClients.length 判断：Edge 被杀后可能残留死连接
+setInterval(() => {
+  if (quitting || !guiSeen) return;
+  if (lastGuiAt && Date.now() - lastGuiAt >= 8000) {
+    quitApp('GUI 已关闭');
+  }
+}, 2000);
 
 server.listen(GUI_PORT, '127.0.0.1', () => {
   try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}

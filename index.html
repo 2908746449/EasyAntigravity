@@ -518,6 +518,17 @@
           refreshApproveBadge(d.approveCount || 0, d.blockCount || 0);
         } catch (e) {}
       }, 3000);
+
+      function notifyQuit() {
+        try {
+          if (navigator.sendBeacon && navigator.sendBeacon('/api/quit', '')) return;
+        } catch (e) {}
+        try {
+          fetch('/api/quit', { method: 'POST', keepalive: true }).catch(() => {});
+        } catch (e) {}
+      }
+      window.addEventListener('pagehide', notifyQuit);
+      window.addEventListener('beforeunload', notifyQuit);
     }
 
     function refreshClientBadge(d) {
