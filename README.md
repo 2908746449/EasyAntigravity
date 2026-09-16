@@ -119,6 +119,15 @@ Get-FileHash .\EasyAntigravity.exe -Algorithm SHA256
 
 ---
 
+<details>
+<summary>🛡️ <b>点击查看安全检测与查毒报告</b></summary>
+
+- **检测状态**：0/48 安全无毒
+- **SHA-256**：`38f98e1cdbb75fed208a2827085c7b67175b6bb2b73357c0b2b25ef649907a6b`
+- **详细报告**：[查看 VirSCAN 扫描报告](https://www.virscan.org/report/38f98e1cdbb75fed208a2827085c7b67175b6bb2b73357c0b2b25ef649907a6b)
+
+</details>
+
 ## License
 
 [MIT](./LICENSE)
