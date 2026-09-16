@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  天下苦反重力久矣。
+  苦反重力久矣。
 </p>
 
 <p align="center">
