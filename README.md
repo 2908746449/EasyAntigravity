@@ -8,7 +8,7 @@
   <strong>自动审批 · 高危拦截 · 免 TUN 登录 · 汉化界面</strong>
 </p>
 
-<p align="center">天下苦反重力久矣。</p>
+<p align="center">苦反重力久矣。</p>
 
 ---
 
@@ -83,9 +83,8 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 | 来源 | 说明 |
 |------|------|
 | [nicktan @ linux.do](https://linux.do/t/topic/2896116) | 界面汉化词典主要来源 |
-| [antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy) | 免 TUN `version.dll` 方案与配置思路 |
-| [AntiGravity-AutoAccept](https://github.com/yazanbaker94/AntiGravity-AutoAccept) | 自动审批交互思想参考（插件形态，面向 Antigravity IDE） |
-| [yuaotian/antigravity-proxy](https://github.com/yuaotian/antigravity-proxy) | 进程代理注入思路参考 |
+| [antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy) | 免 TUN方案 |
+| [AntiGravity-AutoAccept](https://github.com/yazanbaker94/AntiGravity-AutoAccept) | 自动审批交互思想参考 |
 
 ---
 
