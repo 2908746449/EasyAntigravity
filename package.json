@@ -1,0 +1,33 @@
+{
+  "name": "easyantigravity",
+  "version": "1.1.0",
+  "description": "Antigravity launcher: no-TUN proxy inject, I18N, auto-accept",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "pkg . --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip"
+  },
+  "pkg": {
+    "options": [
+      "no-warnings"
+    ],
+    "assets": [
+      "index.html",
+      "config.json",
+      "version.dll",
+      "danger-rules.json",
+      "backup/**/*",
+      "dicts/**/*",
+      "assets/**/*"
+    ],
+    "outputPath": "."
+  },
+  "keywords": ["antigravity", "proxy", "launcher"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
