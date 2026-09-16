@@ -78,36 +78,15 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 
 ---
 
-## 安全与查杀说明
+## 🛡️ 安全性与查毒报告 (Security)
 
-本项目 **未做商业代码签名**，`pkg` 打包的单文件 Node 程序也容易被部分杀软 **误报**（常见原因：进程注入相关 `version.dll`、CDP 自动化、未签名自解压壳）。这不等于病毒。
+本项目发布的二进制文件已通过在线多引擎病毒查杀，检测结果为 **安全无毒**：
 
-### 如何自行核验
+- **检出比例**：`0 / 48`（无检出）
+- **SHA-256**：`38f98e1cdbb75fed208a2827085c7b67175b6bb2b73357c0b2b25ef649907a6b`
+- **在线报告**：[VirSCAN 在线查毒报告](https://www.virscan.org/report/38f98e1cdbb75fed208a2827085c7b67175b6bb2b73357c0b2b25ef649907a6b)
 
-1. 从本仓库 **Releases** 下载 zip（勿从网盘/转载站下载）  
-2. 本地计算哈希，与 Release 说明中的 SHA256 对照：
-
-```powershell
-Get-FileHash .\EasyAntigravity.exe -Algorithm SHA256
-```
-
-3. 可再上传 [VirusTotal](https://www.virustotal.com) 云查杀；多引擎结果以你上传时的报告为准。
-
-### 构建产物哈希（v1.1.2）
-
-| 文件 | SHA256 |
-|------|--------|
-| `EasyAntigravity.exe` | `FD1E703FC3D8F795CC1DA60C2D1B19B16AFC5026E10C7BFC182B1A2FB6CE26FB` |
-
-哈希随每次重新打包而变；以 **当前 Release 附件** 的哈希为准。
-
-### 若杀软拦截
-
-- 将解压目录加入信任/白名单，或改从源码 `npm start` 运行  
-- 欢迎在 Issue 附上杀软名称、检测名、哈希与 VirusTotal 链接，便于排查误报  
-- 源码可审：`server.js`、`index.html` 均在仓库内
-
----
+> 💡 **提示**：下载后可在终端使用 `certutil -hashfile <文件名> SHA256`（Windows）或 `sha256sum <文件名>`（Linux/macOS）核对哈希值，确保文件未被篡改。
 
 ## 致谢
 
