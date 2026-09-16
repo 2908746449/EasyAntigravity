@@ -4,8 +4,57 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const WebSocket = require('ws');
 
+const GUI_PORT = 19823;
+const CDP_PORT = 9333;
+
+// pkg 打包后 __dirname 指向虚拟内存，需锚定 exe 实际所在目录
+const ROOT_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
+const LOCK_FILE = path.join(ROOT_DIR, 'easyag.lock');
+
+function readLockPid() {
+  try {
+    const s = fs.readFileSync(LOCK_FILE, 'utf-8').trim();
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function isPidAlive(pid) {
+  if (!pid || pid <= 0) return false;
+  try {
+    return !!process.kill(pid, 0);
+  } catch (e) {
+    return e && e.code === 'EPERM';
+  }
+}
+
+function releaseLock() {
+  try {
+    const pid = readLockPid();
+    if (!pid || pid === process.pid) fs.unlinkSync(LOCK_FILE);
+  } catch (e) {}
+}
+
+function alreadyRunning() {
+  const pid = readLockPid();
+  return isPidAlive(pid) && pid !== process.pid;
+}
+
+function focusExistingGui() {
+  try {
+    exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --force-dark-mode`);
+  } catch (e) {}
+}
+
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
+// 已有实例时不再拉起新进程
 if (process.platform === 'win32' && !process.env.EASYAG_NOCONSOLE) {
+  if (alreadyRunning()) {
+    focusExistingGui();
+    process.exit(0);
+  }
   try {
     const child = spawn(process.execPath, process.argv.slice(1), {
       detached: true,
@@ -23,17 +72,18 @@ if (process.platform === 'win32' && !process.env.EASYAG_NOCONSOLE) {
   }
 }
 
+// 子进程：若锁显示已有实例，也不占用第二个
+if (alreadyRunning()) {
+  focusExistingGui();
+  process.exit(0);
+}
+
 try {
   process.removeAllListeners('warning');
   process.on('warning', () => {});
   process.env.NODE_NO_WARNINGS = '1';
 } catch (e) {}
 
-const GUI_PORT = 19823;
-const CDP_PORT = 9333;
-
-// pkg 打包后 __dirname 指向虚拟内存，需锚定 exe 实际所在目录
-const ROOT_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
 const HTML_FILE = path.join(ROOT_DIR, 'index.html');
 
 const APP_DIR = path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity');
@@ -602,10 +652,7 @@ function writeCrashLog(msg) {
 
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
-    // 已有实例在跑：打开已有控制台后正常退出，避免双击闪退
-    try {
-      exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --force-dark-mode`);
-    } catch (e) {}
+    focusExistingGui();
     process.exit(0);
   }
   writeCrashLog(err && err.stack ? err.stack : String(err));
@@ -616,7 +663,10 @@ process.on('uncaughtException', (err) => {
   writeCrashLog(err && err.stack ? err.stack : String(err));
 });
 
+process.on('exit', releaseLock);
+
 server.listen(GUI_PORT, '127.0.0.1', () => {
+  try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
   ensureProxyWatchdog();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   // 使用 Edge 应用模式；favicon 为 data-URI，任务栏/标题栏图标跟随页面
