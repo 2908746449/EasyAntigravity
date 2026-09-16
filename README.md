@@ -101,7 +101,7 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 | 文件 | SHA256 |
 |------|--------|
 | `EasyAntigravity.exe` | `66689AFF851EDC72493A9500C31E26E035CE376F1D27D756DCC3DAA85B08D52D` |
-| `EasyAntigravity-v1.1.4-win-x64.zip` | `A0C93AF3EED49A242B93EFE118AB67B590E27D4E311917CE796F7DF7E17274A5` |
+| `EasyAntigravity-v1.1.4-win-x64.zip` | `E5CDEB1DBAC25275C23B1E897AD6B7DDFE02C7664B7268D9A84FB5EB5A496064` |
 
 哈希随每次重新打包而变；以 **当前 Release 附件** 的哈希为准。
 
