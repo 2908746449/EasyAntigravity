@@ -84,18 +84,19 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 
 ```text
 EasyAntigravity/
-├─ EasyAntigravity.exe     # 主程序（双击启动）
+├─ EasyAntigravity.exe     # 主程序（双击启动，无黑框）
 ├─ server.js               # 本地 HTTP + CDP 服务
 ├─ index.html              # 控制台 UI
-├─ config.json             # 代理补丁配置模板
-├─ version.dll             # 免 TUN 进程代理注入
-├─ danger-rules.json       # 高危命令熔断规则（可自定义）
-├─ backup/                 # 自愈备份（DLL / 配置 / 规则）
+├─ backup/                 # 自愈备份（version.dll / config.json / danger-rules.json）
 ├─ dicts/                  # 汉化词典
-├─ assets/                 # Logo 等资源
-└─ 启动EasyAG.*             # 备用无黑框启动
+└─ assets/                 # Logo 等资源
 ```
 
+说明：
+
+- 代理补丁从 `backup/` 部署到 Antigravity 安装目录，并在被更新抹掉后自动恢复
+- 首次启动会把 `backup/danger-rules.json` 生成为同目录的 `danger-rules.json`，之后以该文件为准（可自行编辑，面板里可「打开规则 / 重载」）
+- 无需额外启动器，双击 exe 即可
 ---
 
 ## 高危规则 `danger-rules.json`

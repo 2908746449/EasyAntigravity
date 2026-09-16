@@ -14,9 +14,6 @@
     ],
     "assets": [
       "index.html",
-      "config.json",
-      "version.dll",
-      "danger-rules.json",
       "backup/**/*",
       "dicts/**/*",
       "assets/**/*"
