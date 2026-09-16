@@ -44,7 +44,7 @@ function alreadyRunning() {
 
 function focusExistingGui() {
   try {
-    exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --force-dark-mode`);
+    exec(`start msedge --app=http://127.0.0.1:${GUI_PORT}/?t=${Date.now()} --force-dark-mode`);
   } catch (e) {}
 }
 
@@ -110,7 +110,14 @@ let state = {
   dangerRulesTotal: 0,
   dangerRulesOn: 0,
   approveCount: 0,
-  blockCount: 0
+  blockCount: 0,
+  cdpTargets: 0,
+  cdpSockets: 0,
+  injectCount: 0,
+  lastInjectAt: 0,
+  cdpError: '',
+  cdpFailStreak: 0,
+  cdpLoopRunning: false
 };
 
 const DEFAULT_DANGER_RULES = [
@@ -284,26 +291,184 @@ function generateMasterInjectScript() {
       );
     }
 
+    function findSubmitBtn(root) {
+      if (!root || !root.querySelector) return null;
+      const byTest = root.querySelector(
+        'button[data-testid="interaction-continue-button"], [data-testid="interaction-continue-button"]'
+      );
+      if (byTest && !byTest.disabled && !byTest.hasAttribute('data-ea-ok')) return byTest;
+      const btns = Array.from(root.querySelectorAll('button, [role="button"], div[role="button"], input[type="submit"]'));
+      return btns.find(b => {
+        if (!b || b.disabled || b.hasAttribute('data-ea-ok')) return false;
+        return isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'));
+      }) || null;
+    }
+
+    function cardForSubmit(btn) {
+      return (
+        btn.closest('[data-testid="run-command-step"]') ||
+        btn.closest('div.relative.flex.flex-col') ||
+        btn.closest('div[class*="card"]') ||
+        btn.closest('div[class*="container"]') ||
+        btn.parentElement?.parentElement?.parentElement?.parentElement ||
+        btn.parentElement
+      );
+    }
+
+    function oneLine(s, n) {
+      s = String(s || '').replace(/\\s+/g, ' ').trim();
+      if (n && s.length > n) s = s.slice(0, Math.max(1, n - 1)) + '…';
+      return s;
+    }
+
+    // 高危扫描用：尽量拿到完整命令正文（可多行）
+    function extractCommandText(card) {
+      if (!card) return '';
+      const code = card.querySelector('pre, code, [data-testid="run-command-step"] pre');
+      if (code && (code.innerText || code.textContent || '').trim()) {
+        return (code.innerText || code.textContent || '').trim();
+      }
+      const step = card.querySelector('[data-testid="run-command-step"]');
+      if (step) return (step.innerText || '').trim();
+      return '';
+    }
+
+    // 日志用：单行短摘要
+    function extractLogSummary(card, fallback) {
+      const full = extractCommandText(card);
+      if (full) {
+        const lines = full.split('\\n').map(s => s.trim()).filter(Boolean);
+        // 优先问句行，其次命令行
+        const q = lines.find(l => /[?？]$/.test(l) && l.length < 120);
+        const cmdLine = lines.find(l => !/[?？]$/.test(l) && l.length > 2);
+        return oneLine(q || cmdLine || lines[0], 80);
+      }
+      return oneLine(fallback || '', 80);
+    }
+
+    function classifyOption(tx) {
+      const t = norm(tx);
+      if (!t || t.length > 200) return 0;
+      const isAlways = /always allow|始终允许|总是允许|一直允许/.test(t);
+      const isThisTime = /\\bthis time\\b|仅允许本次|仅这一次|只允许本次|仅本次/.test(t);
+      const isSession = /\\bin this conversation\\b|\\bthis session\\b|\\bthis conversation\\b|对话中|本次会话|本次对话/.test(t);
+      const isProject = /\\bin (this|every) project\\b|\\bthis project\\b|项目中|本项目|所有项目/.test(t);
+      // 编号优先（1. / 2. / 3. / 4.）
+      const num = t.match(/^([1-4])[\\s\\.\\:：\\-]/);
+      if (num) return Number(num[1]);
+      // 互斥语义：this time ≠ always
+      if (isThisTime && !isAlways) return 1;
+      if (isAlways && isSession && !isProject) return 2;
+      if (isAlways && isProject) return 3;
+      if (isAlways && !isSession && !isProject && !isThisTime) return 4;
+      // 裸编号
+      if (t === '1' || t === '2' || t === '3' || t === '4') return Number(t);
+      return 0;
+    }
+
+    function collectOptionCands(card) {
+      const nodes = Array.from(card.querySelectorAll(
+        'label, [role="radio"], [role="option"], [data-testid*="option"], [data-testid*="radio"], button, div, span, li'
+      ));
+      const cands = [];
+      const seen = new Set();
+      for (const el of nodes) {
+        if (!el || seen.has(el)) continue;
+        const raw = (el.innerText || el.textContent || '').trim();
+        if (!raw || raw.length > 160) continue;
+        // 多行选项容器不是叶子选项
+        if (raw.includes('\\n') && raw.split('\\n').filter(Boolean).length > 2) continue;
+        // 只要叶子/近叶子：有更深子节点且文本相同则跳过父级，避免点到整块容器
+        const kids = el.children ? Array.from(el.children) : [];
+        if (kids.length) {
+          const kidTexts = kids.map(k => (k.innerText || '').trim()).join(' ');
+          if (kidTexts && norm(kidTexts) === norm(raw) && raw.length > 20) continue;
+        }
+        const cls = classifyOption(raw);
+        if (!cls) continue;
+        const st = el.getAttribute && el.getAttribute('data-state');
+        const checked = (
+          el.checked === true ||
+          el.getAttribute('aria-checked') === 'true' ||
+          st === 'checked' ||
+          st === 'on' ||
+          (el.classList && el.classList.contains('checked'))
+        );
+        const score =
+          (el.getAttribute && el.getAttribute('role') === 'radio' ? 40 : 0) +
+          (el.tagName === 'LABEL' ? 30 : 0) +
+          (el.getAttribute && /option|radio|choice/i.test(el.getAttribute('data-testid') || '') ? 35 : 0) +
+          (checked ? 10 : 0) -
+          Math.min(raw.length, 80) * 0.1;
+        cands.push({ el, cls, score, checked, text: clip(raw, 80) });
+        seen.add(el);
+      }
+      return cands;
+    }
+
     function matchOptionEl(card, optIdx) {
       const idx = Number(optIdx) || 4;
-      const patterns = {
-        1: [/^1[\\s\\.\\:：\\-]/, /this time/, /仅本次/, /这一次/, /本次/],
-        2: [/^2[\\s\\.\\:：\\-]/, /this session/, /对话中/, /本次会话/],
-        3: [/^3[\\s\\.\\:：\\-]/, /this project/, /项目中/, /本项目/],
-        4: [/^4[\\s\\.\\:：\\-]/, /always allow/, /始终允许/, /全局/, /\\balways\\b/]
-      };
-      const pats = patterns[idx] || patterns[4];
-      const items = Array.from(card.querySelectorAll('label, [role="radio"], [role="option"], button, div, span, li'));
-      for (const el of items) {
-        const tx = norm(el.innerText);
-        if (!tx || tx.length > 80) continue;
-        if (pats.some(p => p.test(tx))) return el;
+      const cands = collectOptionCands(card);
+      const exact = cands.filter(c => c.cls === idx);
+      if (exact.length) {
+        exact.sort((a, b) => b.score - a.score);
+        return exact[0];
       }
-      for (const el of items) {
-        const tx = norm(el.innerText);
-        if (tx === String(idx) || new RegExp('^' + idx + '[\\\\s\\\\.\\\\:：\\\\-]').test(tx)) return el;
+      // 目标选项不存在时：若只有 this-time 语义选项，优先选它，避免默认落到 always
+      if (idx === 1) {
+        const t1 = cands.filter(c => c.cls === 1);
+        if (t1.length) return t1[0];
       }
       return null;
+    }
+
+    function tryApprove(btn, kind) {
+      if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
+      const card = cardForSubmit(btn);
+      if (window.__ea_config.blockDangerous) {
+        const cmd = extractCommandText(card);
+        if (cmd) {
+          const hit = DANGEROUS_PATTERNS.find(r => r.re.test(cmd));
+          if (hit) {
+            btn.setAttribute('data-ea-ok', 'blocked');
+            console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']: ' + cmd.slice(0, 80));
+            return true;
+          }
+        }
+      }
+      const optIdx = (window.__ea_config && window.__ea_config.preferOption) || 4;
+      let optText = '';
+      let picked = null;
+      if (card) {
+        const cands = collectOptionCands(card);
+        if (cands.length) {
+          const brief = cands.map(c => '#' + c.cls + (c.checked ? '*' : '') + oneLine(c.text, 36)).join(' | ');
+          console.log('[EA_OPT] prefer=' + optIdx + ' · ' + oneLine(brief, 180));
+        }
+        picked = matchOptionEl(card, optIdx);
+        if (picked && picked.el) {
+          realClick(picked.el);
+          optText = oneLine(picked.text, 40);
+          // 若点击后仍无选中态，再点一次（部分自定义控件首次 pointer 无效）
+          const st = picked.el.getAttribute && picked.el.getAttribute('data-state');
+          const stillOff = picked.el.checked === false ||
+            picked.el.getAttribute('aria-checked') === 'false' ||
+            st === 'unchecked';
+          if (stillOff) realClick(picked.el);
+        } else if (cands.length) {
+          // 有选项组但没匹配到目标：不要默默点提交，避免落到会话级 always
+          console.warn('[EA_OPT] 未找到选项[' + optIdx + ']，暂不点击提交');
+          return false;
+        }
+      }
+      btn.setAttribute('data-ea-ok', 'true');
+      realClick(btn);
+      const cmd = extractLogSummary(card, kind || (btn.innerText || ''));
+      const optLabel = picked
+        ? '选项[' + picked.cls + '] ' + optText
+        : '无选项组';
+      console.log('[EA_AA] 放行 · ' + optLabel + ' · ' + cmd);
+      return true;
     }
 
     function clip(s, n) {
@@ -379,53 +544,32 @@ function generateMasterInjectScript() {
         translateDOM(doc);
         if (!window.__ea_config.autoAccept) return;
 
+        // 1) AG 2.13 交互卡（运行命令 / 工具审批）：优先 data-testid
+        const interactSubmit = doc.querySelector('button[data-testid="interaction-continue-button"]');
+        if (interactSubmit && tryApprove(interactSubmit, '交互卡提交')) return;
+
+        // 2) 权限卡片（收窄匹配，避免正文里的 permission/read files 误伤）
         const pageText = norm(doc.body ? doc.body.innerText : '');
-        const permHit = /allow reading|yes, allow|允许访问|allow access|read files|file access|permission|权限请求|请求权限|访问文件/.test(pageText);
+        const permHit = /allow reading|yes, allow|允许访问|allow access|权限请求|请求权限|访问文件/.test(pageText)
+          || (/(^|\\s)permission(\\s|$)/i.test(pageText) && /allow|允许|yes/i.test(pageText));
         if (permHit) {
           const cards = Array.from(doc.querySelectorAll('div, section, [role="dialog"], [role="alertdialog"]'));
           for (const card of cards) {
             const t = norm(card.innerText);
             if (!t || t.length > 2500) continue;
-            if (!/allow reading|yes, allow|允许访问|allow access|permission|权限|read files|访问文件/.test(t)) continue;
-            const submitBtn = Array.from(card.querySelectorAll('button, [role="button"], div[role="button"], input[type="submit"]'))
-              .find(b => isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')));
-
-            if (submitBtn && !submitBtn.hasAttribute('data-ea-ok')) {
-              const optIdx = (window.__ea_config && window.__ea_config.preferOption) || 4;
-              const targetOpt = matchOptionEl(card, optIdx);
-              if (targetOpt) realClick(targetOpt);
-              submitBtn.setAttribute('data-ea-ok', 'true');
-              realClick(submitBtn);
-              const summary = extractRequestSummary(card) || '(未识别到请求正文)';
-              console.log('[EA_AA] 批准权限 · 选项[' + optIdx + '] · ' + summary);
-              return;
-            }
+            if (!/allow reading|yes, allow|允许访问|allow access|permission|权限|访问文件/.test(t)) continue;
+            const submitBtn = findSubmitBtn(card);
+            if (submitBtn && tryApprove(submitBtn, '权限卡')) return;
           }
         }
 
+        // 3) 关键字兜底
         const kws = ['run', 'accept', 'continue', 'always allow', 'allow', '运行', '接受', '继续', '始终允许', '允许', '确认', '提交'];
         for (const btn of Array.from(doc.querySelectorAll('button, [role="button"]'))) {
           const txt = norm(btn.innerText || btn.getAttribute('aria-label'));
           if (!txt || txt.length > 24) continue;
           if (kws.some(k => txt === k || txt.startsWith(k))) {
-            if (!btn.disabled && !btn.hasAttribute('data-ea-ok')) {
-              const card = btn.closest('div[class*="card"], div[class*="container"]') || btn.parentElement?.parentElement;
-              if (window.__ea_config.blockDangerous) {
-                const codeBlock = card ? (card.querySelector('pre, code') || card) : null;
-                const cmd = codeBlock ? (codeBlock.innerText || '').trim() : '';
-                if (DANGEROUS_PATTERNS.some(r => r.re.test(cmd))) {
-                  const hit = DANGEROUS_PATTERNS.find(r => r.re.test(cmd));
-                  btn.setAttribute('data-ea-ok', 'blocked');
-                  console.warn('[EA_ALERT] 拦截高危指令[' + (hit && hit.id) + ']: ' + cmd.slice(0, 80));
-                  return;
-                }
-              }
-              btn.setAttribute('data-ea-ok', 'true');
-              realClick(btn);
-              const summary = extractRequestSummary(card) || txt;
-              console.log('[EA_AA] 放行 · ' + summary);
-              return;
-            }
+            if (tryApprove(btn, txt)) return;
           }
         }
       }
@@ -455,8 +599,68 @@ function httpGetJson(url) {
 }
 
 const cdpSockets = new Map();
+let cdpCmdId = 1;
+
+function cdpSend(ws, method, params = {}) {
+  const id = cdpCmdId++;
+  try {
+    ws.send(JSON.stringify({ id, method, params }));
+    return true;
+  } catch (e) {
+    state.cdpError = `send ${method}: ${e.message || e}`;
+    return false;
+  }
+}
+
+function injectInto(ws, reason = '') {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  const ok = cdpSend(ws, 'Runtime.evaluate', {
+    expression: generateMasterInjectScript(),
+    returnByValue: false,
+    awaitPromise: false
+  });
+  if (ok) {
+    state.injectCount += 1;
+    state.lastInjectAt = Date.now();
+    state.cdpError = '';
+  }
+  return ok;
+}
+
+let lastStatusKey = '';
+function pushClientStatus() {
+  const alive = state.clientRunning && state.cdpSockets > 0;
+  const status = !state.clientRunning
+    ? '客户端未运行'
+    : alive
+      ? `运行中 · 引擎注入 ${state.cdpSockets}`
+      : '运行中 · 等待 CDP';
+  const payload = {
+    status,
+    clientRunning: state.clientRunning,
+    cdpSockets: state.cdpSockets,
+    cdpTargets: state.cdpTargets,
+    injectCount: state.injectCount,
+    lastInjectAt: state.lastInjectAt,
+    cdpError: state.cdpError
+  };
+  // 状态心跳只在关键字段变化时推送，避免刷屏；且绝不带 category/message
+  const key = [
+    status,
+    state.clientRunning,
+    state.cdpSockets,
+    state.cdpTargets,
+    state.cdpError
+  ].join('|');
+  if (key === lastStatusKey) return;
+  lastStatusKey = key;
+  sseClients.forEach(res => res.write(`data: ${JSON.stringify(payload)}\n\n`));
+}
 
 async function startCDPLoop() {
+  if (state.cdpLoopRunning) return;
+  state.cdpLoopRunning = true;
+  state.cdpFailStreak = 0;
   while (state.clientRunning) {
     try {
       const targets = await httpGetJson(`http://127.0.0.1:${CDP_PORT}/json/list`);
@@ -466,54 +670,112 @@ async function startCDPLoop() {
         !String(t.url || '').startsWith('data:text/html')
       );
 
+      state.cdpTargets = valid.length;
+      if (valid.length > 0) state.cdpFailStreak = 0;
       const aliveIds = new Set(valid.map(t => t.webSocketDebuggerUrl));
 
-      // 关掉已失效的连接
-      for (const [key, sock] of cdpSockets) {
+      for (const [key, entry] of cdpSockets) {
         if (!aliveIds.has(key)) {
-          try { sock.close(); } catch (e) {}
+          try { entry.ws.close(); } catch (e) {}
           cdpSockets.delete(key);
         }
       }
 
       for (const target of valid) {
         const key = target.webSocketDebuggerUrl;
-        if (cdpSockets.has(key)) continue;
 
-        const ws = new WebSocket(key);
-        cdpSockets.set(key, ws);
-        ws.on('open', () => {
-          ws.send(JSON.stringify({ id: 1, method: 'Runtime.enable' }));
-          ws.send(JSON.stringify({ id: 2, method: 'Runtime.evaluate', params: { expression: generateMasterInjectScript() } }));
-        });
-        ws.on('message', (data) => {
-          try {
-            const msg = JSON.parse(data.toString());
-            if (msg.method === 'Runtime.consoleAPICalled') {
-              const text = msg.params.args.map(a => a.value || '').join(' ');
-              if (text.includes('[EA_AA]')) {
-                state.approveCount += 1;
-                logToGUI('AUTO-ACCEPT', text.replace('[EA_AA]', '').trim(), 'tag-aa');
-                pushCounters();
-              } else if (text.includes('[EA_ALERT]')) {
-                state.blockCount += 1;
-                logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
-                pushCounters();
+        if (!cdpSockets.has(key)) {
+          const ws = new WebSocket(key);
+          const entry = { ws, title: target.title || '', url: target.url || '' };
+          cdpSockets.set(key, entry);
+
+          ws.on('open', () => {
+            cdpSend(ws, 'Runtime.enable');
+            cdpSend(ws, 'Page.enable');
+            injectInto(ws, 'open');
+            logToGUI('CDP', `已连接目标并注入: ${String(entry.title || entry.url).slice(0, 60)}`, 'tag-i18n');
+            pushClientStatus();
+          });
+
+          ws.on('message', (data) => {
+            try {
+              const msg = JSON.parse(data.toString());
+              // 导航/新执行上下文后立刻补打（AG 动态端口 Reload 会走这里）
+              if (
+                msg.method === 'Runtime.executionContextCreated' ||
+                msg.method === 'Page.loadEventFired' ||
+                msg.method === 'Page.frameNavigated'
+              ) {
+                injectInto(ws, msg.method);
               }
-            }
-          } catch (e) {}
-        });
-        ws.on('error', () => {
-          cdpSockets.delete(key);
-          try { ws.close(); } catch (e) {}
-        });
-        ws.on('close', () => {
-          cdpSockets.delete(key);
-        });
+              if (msg.method === 'Runtime.consoleAPICalled') {
+                const text = msg.params.args.map(a => a.value || '').join(' ');
+                if (text.includes('[EA_AA]')) {
+                  state.approveCount += 1;
+                  logToGUI('AUTO-ACCEPT', text.replace('[EA_AA]', '').trim(), 'tag-aa');
+                  pushCounters();
+                } else if (text.includes('[EA_ALERT]')) {
+                  state.blockCount += 1;
+                  logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
+                  pushCounters();
+                }
+              }
+            } catch (e) {}
+          });
+
+          ws.on('error', (err) => {
+            state.cdpError = `ws: ${err.message || err}`;
+            logToGUI('CDP', `WebSocket 错误: ${err.message || err}`, 'tag-warn');
+            cdpSockets.delete(key);
+            try { ws.close(); } catch (e) {}
+            pushClientStatus();
+          });
+
+          ws.on('close', () => {
+            cdpSockets.delete(key);
+            pushClientStatus();
+          });
+        } else {
+          const entry = cdpSockets.get(key);
+          if (entry.ws.readyState === WebSocket.OPEN) {
+            // 周期重注入：刷新配置；若页面被 Reload 清掉引擎则重新拉起
+            injectInto(entry.ws, 'tick');
+          } else {
+            try { entry.ws.close(); } catch (e) {}
+            cdpSockets.delete(key);
+          }
+        }
       }
-    } catch (e) {}
+
+      state.cdpSockets = cdpSockets.size;
+      if (valid.length === 0) {
+        state.cdpError = 'CDP 无可用页面目标';
+      }
+    } catch (e) {
+      state.cdpError = String(e.message || e);
+      state.cdpSockets = cdpSockets.size;
+      state.cdpFailStreak += 1;
+      // CDP 连续不可达（约 10s）：视为客户端已退出（覆盖 attach 模式无 child exit 的情况）
+      if (state.cdpFailStreak >= 5) {
+        state.clientRunning = false;
+        state.cdpTargets = 0;
+        state.cdpSockets = 0;
+        for (const [, entry] of cdpSockets) {
+          try { entry.ws.close(); } catch (e) {}
+        }
+        cdpSockets.clear();
+        logToGUI('SYSTEM', 'CDP 失联，已标记客户端停止', 'tag-warn');
+        pushClientStatus();
+        break;
+      }
+    }
+    pushClientStatus();
     await new Promise(r => setTimeout(r, 2000));
   }
+  state.cdpLoopRunning = false;
+  state.clientRunning = false;
+  state.cdpSockets = 0;
+  pushClientStatus();
 }
 
 const MIME = {
@@ -529,8 +791,12 @@ const MIME = {
 };
 
 const server = http.createServer((req, res) => {
-  if (req.url === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  if (req.url === '/' || (req.url && req.url.startsWith('/?'))) {
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache'
+    });
     return res.end(fs.readFileSync(HTML_FILE));
   }
   if (req.url && req.url.startsWith('/assets/')) {
@@ -623,14 +889,31 @@ const server = http.createServer((req, res) => {
 
     if (state.enableI18n) logToGUI('I18N', `已装载汉化引擎 (${state.dictEntries} 条词条)`, 'tag-i18n');
 
+    // 若已在跑，只提示刷新，不重复 spawn
+    if (state.clientRunning) {
+      logToGUI('SYSTEM', '客户端已在运行，CDP 注入通道保持重试', 'tag-warn');
+      pushClientStatus();
+      res.end('ok');
+      return;
+    }
+
     const child = spawn(APP_EXE, [`--remote-debugging-port=${CDP_PORT}`], { detached: true, stdio: 'ignore' });
     state.clientRunning = true;
+    state.cdpError = '';
+    state.cdpFailStreak = 0;
     logToGUI('SYSTEM', '✓ Antigravity 已启动，代理注入与 CDP 接管就绪', 'tag-proxy');
+    pushClientStatus();
 
     startCDPLoop();
     child.on('exit', () => {
       state.clientRunning = false;
+      state.cdpSockets = 0;
+      for (const [, entry] of cdpSockets) {
+        try { entry.ws.close(); } catch (e) {}
+      }
+      cdpSockets.clear();
       logToGUI('SYSTEM', 'Antigravity 客户端已关闭', 'tag-warn');
+      pushClientStatus();
     });
     res.end('ok');
     return;
@@ -643,6 +926,19 @@ const server = http.createServer((req, res) => {
 
 loadDictionaries();
 loadDangerRules();
+
+async function tryAttachExistingClient() {
+  try {
+    const targets = await httpGetJson(`http://127.0.0.1:${CDP_PORT}/json/list`);
+    if (!Array.isArray(targets) || !targets.length) return false;
+    state.clientRunning = true;
+    logToGUI('SYSTEM', '检测到 Antigravity 已在运行，自动接管 CDP 注入', 'tag-proxy');
+    startCDPLoop();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 function writeCrashLog(msg) {
   try {
@@ -670,5 +966,7 @@ server.listen(GUI_PORT, '127.0.0.1', () => {
   ensureProxyWatchdog();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   // 使用 Edge 应用模式；favicon 为 data-URI，任务栏/标题栏图标跟随页面
-  exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --force-dark-mode`);
+  exec(`start msedge --app=http://127.0.0.1:${GUI_PORT}/?t=${Date.now()} --force-dark-mode`);
+  // AG 可能先于 EasyAG 启动：探测 9333 并自动接管
+  setTimeout(() => { tryAttachExistingClient(); }, 500);
 });

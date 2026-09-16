@@ -469,9 +469,12 @@
     const consoleBox = document.getElementById('consoleBox');
 
     function appendLog(category, msg, styleClass) {
+      if (category == null && msg == null) return;
+      if (category === undefined || category === null || category === '') category = 'SYSTEM';
+      if (msg === undefined || msg === null) msg = '';
       const time = new Date().toLocaleTimeString();
       const div = document.createElement('div');
-      div.className = `log-line ${styleClass}`;
+      div.className = `log-line ${styleClass || ''}`;
       div.innerText = `[${time}] [${category}] ${msg}`;
       consoleBox.appendChild(div);
       consoleBox.scrollTop = consoleBox.scrollHeight;
@@ -490,6 +493,7 @@
       document.getElementById('i18nToggle').checked = d.enableI18n;
       document.getElementById('dictCountBadge').innerText = `已载入 ${d.dictEntries} 条汉化词条`;
       refreshRulesBadge(d.dangerRulesOn, d.dangerRulesTotal);
+      refreshClientBadge(d);
       if (typeof d.approveCount === 'number' || typeof d.blockCount === 'number') {
         refreshApproveBadge(d.approveCount || 0, d.blockCount || 0);
       }
@@ -500,14 +504,43 @@
         if (item.counters) {
           refreshApproveBadge(item.approveCount || 0, item.blockCount || 0);
         }
-        appendLog(item.category, item.message, item.cls);
-        if (item.status) {
-          const badge = document.getElementById('clientStatusBadge');
-          const isRun = item.status.includes('运行中');
-          badge.className = isRun ? 'status-capsule active' : 'status-capsule';
-          badge.querySelector('span').innerText = item.status;
+        if (item.status) refreshClientBadge(item);
+        if (item.category || item.message) {
+          appendLog(item.category, item.message, item.cls);
         }
       };
+
+      setInterval(async () => {
+        try {
+          const res = await fetch('/api/status');
+          const d = await res.json();
+          refreshClientBadge(d);
+          refreshApproveBadge(d.approveCount || 0, d.blockCount || 0);
+        } catch (e) {}
+      }, 3000);
+    }
+
+    function refreshClientBadge(d) {
+      const badge = document.getElementById('clientStatusBadge');
+      if (!badge || !d) return;
+      let text = '客户端未就绪';
+      let active = false;
+      if (d.clientRunning) {
+        const socks = d.cdpSockets || 0;
+        if (socks > 0) {
+          text = `运行中 · 引擎注入 ${socks}`;
+          active = true;
+        } else {
+          text = d.cdpError ? '运行中 · CDP 异常' : '运行中 · 等待 CDP';
+          active = true;
+        }
+      } else if (typeof d.status === 'string' && d.status) {
+        text = d.status;
+        active = d.status.includes('运行中');
+      }
+      badge.className = active ? 'status-capsule active' : 'status-capsule';
+      badge.querySelector('span').innerText = text;
+      badge.title = d.cdpError || `inject=${d.injectCount || 0}`;
     }
 
     function applyPort(val) {
