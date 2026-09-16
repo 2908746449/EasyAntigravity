@@ -593,6 +593,29 @@ const server = http.createServer((req, res) => {
 
 loadDictionaries();
 loadDangerRules();
+
+function writeCrashLog(msg) {
+  try {
+    fs.writeFileSync(path.join(ROOT_DIR, 'easyag-error.log'), String(msg), 'utf-8');
+  } catch (e) {}
+}
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    // 已有实例在跑：打开已有控制台后正常退出，避免双击闪退
+    try {
+      exec(`start msedge --app=http://127.0.0.1:${GUI_PORT} --force-dark-mode`);
+    } catch (e) {}
+    process.exit(0);
+  }
+  writeCrashLog(err && err.stack ? err.stack : String(err));
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  writeCrashLog(err && err.stack ? err.stack : String(err));
+});
+
 server.listen(GUI_PORT, '127.0.0.1', () => {
   ensureProxyWatchdog();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
