@@ -124,3 +124,8 @@ Get-FileHash .\EasyAntigravity.exe -Algorithm SHA256
 [MIT](./LICENSE)
 
 Antigravity 为 Google 产品，本项目与其官方无关。请遵守当地法律与软件许可协议。
+
+---
+
+<sub>🥚 想要了解这个项目诞生的背后故事？点这里发现 [隐藏彩蛋](./彩蛋.md) 🚀</sub>
+
