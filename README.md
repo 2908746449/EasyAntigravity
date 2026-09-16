@@ -93,11 +93,12 @@ Get-FileHash .\EasyAntigravity.exe -Algorithm SHA256
 
 3. 可再上传 [VirusTotal](https://www.virustotal.com) 云查杀；多引擎结果以你上传时的报告为准。
 
-### 构建产物哈希（v1.1.2）
+### 构建产物哈希（v1.1.3）
 
 | 文件 | SHA256 |
 |------|--------|
-| `EasyAntigravity.exe` | `FD1E703FC3D8F795CC1DA60C2D1B19B16AFC5026E10C7BFC182B1A2FB6CE26FB` |
+| `EasyAntigravity.exe` | `7DFBF70DE95237A2000BF86036BAE307F537C8DCF0107DC96DCE0E421B5D2C48` |
+| `EasyAntigravity-v1.1.3-win-x64.zip` | `1C9DA317E2975C43CFBDAC93797458014BB0329695B91D371ED14B5D3BF6734D` |
 
 哈希随每次重新打包而变；以 **当前 Release 附件** 的哈希为准。
 
