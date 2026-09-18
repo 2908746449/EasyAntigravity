@@ -96,6 +96,6 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 
 Antigravity 为 Google 产品，本项目与其官方无关。请遵守当地法律与软件许可协议。
 
-友链
+##友链
 [linux.do](https://linux.do)
 
