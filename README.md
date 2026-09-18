@@ -87,23 +87,6 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 | [antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy) | 免 TUN方案 |
 | [AntiGravity-AutoAccept](https://github.com/yazanbaker94/AntiGravity-AutoAccept) | 自动审批交互思想参考 |
 
----
-
-<details>
-<summary>🛡️ <b>点击查看安全检测与查毒报告</b></summary>
-
-- **检测状态**：0/48 安全无毒
-- **历史扫描 SHA-256**：`38f98e1cdbb75fed208a2827085c7b67175b6bb2b73357c0b2b25ef649907a6b`
-- **详细报告**：[查看 VirSCAN 扫描报告](https://www.virscan.org/report/38f98e1cdbb75fed208a2827085c7b67175b6bb2b73357c0b2b25ef649907a6b)
-
-### v1.1.4 构建产物哈希
-
-| 文件 | SHA256 |
-|------|--------|
-| `EasyAntigravity.exe` | `66689AFF851EDC72493A9500C31E26E035CE376F1D27D756DCC3DAA85B08D52D` |
-| `EasyAntigravity-v1.1.4-win-x64.zip` | `E5CDEB1DBAC25275C23B1E897AD6B7DDFE02C7664B7268D9A84FB5EB5A496064` |
-
-哈希随每次重新打包而变；以 **当前 Release 附件** 的哈希为准。
 
 </details>
 
@@ -113,4 +96,6 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 
 Antigravity 为 Google 产品，本项目与其官方无关。请遵守当地法律与软件许可协议。
 
+友链
+[linux.do](https://linux.do)
 
