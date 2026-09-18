@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 允许 dyld 读取 DYLD_INSERT_LIBRARIES（hardened runtime 默认剥离） -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <!-- 允许加载非同一 Team ID 签名的库（我们注入的 dylib 是 ad-hoc 签名） -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- 保留 Electron / Go runtime 既有需求，避免重签后崩溃 -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.debugger</key>
+  <true/>
+</dict>
+</plist>

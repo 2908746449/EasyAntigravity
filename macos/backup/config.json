@@ -1,0 +1,57 @@
+{
+  "fake_ip": {
+    "cidr": "198.18.0.0/15",
+    "enabled": true
+  },
+  "_version": "antigravity-2.0-no-tun-macos",
+  "_comment": "EasyAntigravity macOS No-TUN proxy config. Change proxy.port to your local SOCKS5 port if needed.",
+  "_proxy_core": "based-on-antigravity-proxy / dyld-connect-hook",
+  "traffic_logging": false,
+  "target_processes": [
+    "language_server",
+    "Antigravity",
+    "Antigravity Helper",
+    "node"
+  ],
+  "proxy_rules": {
+    "allowed_ports": [
+      80,
+      443
+    ],
+    "udp_fallback": "block",
+    "ipv6_mode": "proxy",
+    "routing": {
+      "rules": [],
+      "use_default_private": true,
+      "default_action": "proxy",
+      "enabled": true,
+      "priority_mode": "order"
+    },
+    "udp_mode": "block",
+    "dns_mode": "remote",
+    "bypass": [
+      "127.0.0.0/8",
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "169.254.0.0/16",
+      "::1/128",
+      "fc00::/7",
+      "fe80::/10"
+    ]
+  },
+  "child_injection_mode": "filtered",
+  "timeout": {
+    "recv": 5000,
+    "connect": 5000,
+    "send": 5000
+  },
+  "log_level": "info",
+  "child_injection": true,
+  "proxy": {
+    "port": 7890,
+    "type": "socks5",
+    "host": "127.0.0.1"
+  },
+  "child_injection_exclude": []
+}

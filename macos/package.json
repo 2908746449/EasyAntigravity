@@ -1,0 +1,19 @@
+{
+  "name": "easyantigravity-mac",
+  "version": "1.1.4",
+  "description": "Antigravity macOS launcher: no-TUN proxy inject (DYLD), I18N, auto-accept",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build:dylib": "sh native/build.sh",
+    "dyld:apply": "sh scripts/easyag-dyld.sh apply",
+    "dyld:revert": "sh scripts/easyag-dyld.sh revert",
+    "dyld:status": "sh scripts/easyag-dyld.sh status"
+  },
+  "keywords": ["antigravity", "proxy", "launcher", "macos", "dyld"],
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

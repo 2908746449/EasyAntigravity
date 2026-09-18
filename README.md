@@ -14,16 +14,33 @@
 
 ## 简介
 
-**EasyAntigravity（EasyAG）** 是 Windows 上面向 Google Antigravity 的本地控制台，把常用增强收进一个小面板：
+**EasyAntigravity（EasyAG）** 是面向 Google Antigravity 的本地控制台，把常用增强收进一个小面板：
 
-- **免 TUN 代理**：自动部署 `version.dll` 补丁，进程走本地 SOCKS5；客户端更新抹掉补丁后会自动从备份恢复
+- **免 TUN 代理**：自动部署代理补丁，进程走本地 SOCKS5；客户端更新抹掉补丁后会自动从备份恢复
 - **界面汉化**：通过 CDP 注入词典，实时翻译界面文案
 - **自动审批**：识别权限卡片并按策略一键放行，日志里会带上请求内容摘要
 - **高危拦截**：放行前按 `danger-rules.json` 规则扫描危险命令并熔断
 
 ---
 
-## 开箱即用
+## 平台支持
+
+| 平台 | 目录 | 免 TUN 代理落点 |
+|---|---|---|
+| Windows | 仓库根目录 | `version.dll` 劫持 winsock `connect()` |
+| macOS | [`macos/`](macos/) | `libeasyag_proxy.dylib` 劫持 libsystem `connect()`（DYLD 注入 + 重签名） |
+
+macOS 版见 **[macos/README.md](macos/README.md)**，安装：
+
+```bash
+cd macos && ./install.sh
+```
+
+汉化、自动审批、高危拦截三块在两端共用同一套 CDP 注入引擎，行为一致。
+
+---
+
+## 开箱即用（Windows）
 
 1. 打开 [Releases](../../releases)，下载最新的 **`EasyAntigravity-v*-win-x64.zip`**
 2. 解压到任意目录（建议路径不要过深、避免中文权限问题目录）
